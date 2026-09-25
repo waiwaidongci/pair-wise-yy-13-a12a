@@ -1,128 +1,182 @@
+import { useMemo, useState } from "react";
 import "./styles.css";
+import { useStore } from "./archive/store";
+import { sheetCost } from "./domain/calculations";
+import { ConfirmStation } from "./pages/ConfirmStation";
+import { MasterData } from "./pages/MasterData";
+import { fmtTime, STATUS_META } from "./pages/meta";
 
-const project = {
-  "sourceNo": 7,
-  "id": "hxyfront-62012",
-  "port": 62012,
-  "title": "纺织染整小样管理",
-  "domain": "纺织染整",
-  "prompt": "我需要一个纺织染整实验室的小样管理前端系统，可以记录面料成分、克重、染料配方、浴比、温度曲线、保温时间、后整理方式、色差值和评审结果。页面需要有小样批次列表、配方比例展示、Lab色差对比、工艺曲线摘要和按客户订单筛选。",
-  "palette": [
-    "#be123c",
-    "#4f46e5",
-    "#16a34a"
-  ],
-  "metrics": [
-    "小样批次",
-    "色差超限",
-    "客户订单",
-    "通过率"
-  ],
-  "filters": [
-    "棉",
-    "涤纶",
-    "锦纶",
-    "混纺"
-  ],
-  "fields": [
-    "面料成分",
-    "克重",
-    "染料配方",
-    "浴比",
-    "保温时间",
-    "色差值"
-  ],
-  "records": [
-    [
-      "LAB-620A",
-      "棉府绸120g",
-      "ΔE 0.84",
-      "评审通过"
-    ],
-    [
-      "LAB-621C",
-      "涤纶针织",
-      "升温曲线偏快",
-      "待复染"
-    ],
-    [
-      "LAB-624B",
-      "混纺斜纹",
-      "后整理柔软剂2%",
-      "客户确认中"
-    ]
-  ]
-};
+type View = "station" | "archive";
 
 function App() {
+  const store = useStore();
+  const { state, error, flash, resetDemo } = store;
+  const [view, setView] = useState<View>("station");
+
+  const metrics = useMemo(() => {
+    const total = state.sheets.filter((s) => s.status !== "VOID").length;
+    const blocked = state.sheets.filter((s) => s.status === "BLOCKED").length;
+    const issued = state.sheets.filter((s) => s.status === "ISSUED").length;
+    const issuedCost = state.sheets
+      .filter((s) => s.status === "ISSUED")
+      .reduce((sum, s) => sum + sheetCost(s), 0);
+    return { total, blocked, issued, issuedCost };
+  }, [state.sheets]);
+
   return (
     <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
+      <header className="topbar">
+        <div>
+          <h1>小样送样确认台</h1>
+          <p>
+            绑定订单 · 配方版本 · 色卡 ｜ 称料与复核双人分别确认 ｜
+            按投料算成本，余量不足 / 超预算一律停在待处理，禁止出送样单
+          </p>
+        </div>
+        <div className="topbar-actions">
+          <button
+            className={view === "station" ? "view-btn active" : "view-btn"}
+            onClick={() => setView("station")}
+          >
+            确认台
+          </button>
+          <button
+            className={view === "archive" ? "view-btn active" : "view-btn"}
+            onClick={() => setView("archive")}
+          >
+            操作档案
+          </button>
+          <button className="view-btn ghost" onClick={resetDemo}>
+            重置演示数据
+          </button>
+        </div>
+      </header>
 
       <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
-          </article>
-        ))}
+        <article>
+          <small>在途小样确认单</small>
+          <strong>{metrics.total}</strong>
+        </article>
+        <article className={metrics.blocked ? "metric-danger" : ""}>
+          <small>待处理（余量/预算拦截）</small>
+          <strong>{metrics.blocked}</strong>
+        </article>
+        <article>
+          <small>已出送样单</small>
+          <strong>{metrics.issued}</strong>
+        </article>
+        <article>
+          <small>已出单投料成本</small>
+          <strong>¥{metrics.issuedCost.toFixed(2)}</strong>
+        </article>
       </section>
 
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}分类</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
+      {error && <div className="toast toast-error">⚠ {error}</div>}
+      {flash && <div className="toast toast-flash">✓ {flash}</div>}
 
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+      {view === "station" ? (
+        <>
+          <ConfirmStation store={store} />
+          <MasterData store={store} />
+        </>
+      ) : (
+        <ArchiveView store={store} onJump={() => setView("station")} />
+      )}
 
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>近期记录</p>
-            <h2>工作台摘要</h2>
-          </div>
-          <button>导出CSV</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <footer className="footnote">
+        分层说明：计算（src/domain/calculations.ts 纯函数）｜
+        档案（src/archive 状态机 · 事件台账 · localStorage 落档）｜
+        页面（src/pages 仅渲染与交互）
+      </footer>
     </main>
   );
+}
+
+function ArchiveView({
+  store,
+  onJump,
+}: {
+  store: ReturnType<typeof useStore>;
+  onJump: () => void;
+}) {
+  const { state } = store;
+  const events = [...state.ledger].sort((a, b) => b.id - a.id);
+
+  return (
+    <section className="panel archive-panel">
+      <div className="heading">
+        <div>
+          <p>档案</p>
+          <h2>事件台账（全部操作不可变留痕）</h2>
+        </div>
+        <button onClick={onJump}>返回确认台</button>
+      </div>
+      <table className="ledger-table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>小样</th>
+            <th>动作</th>
+            <th>说明</th>
+            <th>操作人</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.map((e) => (
+            <tr key={e.id} className={`evt evt-${e.type.toLowerCase()}`}>
+              <td>{fmtTime(e.at)}</td>
+              <td>{e.sampleCode}</td>
+              <td>
+                <span className={`evt-badge evt-${e.type.toLowerCase()}`}>
+                  {eventLabel(e.type)}
+                </span>
+              </td>
+              <td>{e.detail}</td>
+              <td>{e.staffName ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h3 className="void-title">已失效留档确认单</h3>
+      <div className="void-archive">
+        {state.sheets.filter((s) => s.status === "VOID").length === 0 && (
+          <p className="empty">暂无失效单据。</p>
+        )}
+        {state.sheets
+          .filter((s) => s.status === "VOID")
+          .sort((a, b) => Number(b.sampleCode.slice(2)) - Number(a.sampleCode.slice(2)))
+          .map((s) => {
+            const succ = state.sheets.find((x) => x.id === s.successorId);
+            return (
+              <div key={s.id} className="void-record">
+                <div>
+                  <b>{s.sampleCode}</b>
+                  <span className={`badge ${STATUS_META.VOID.cls}`}>失效留档</span>
+                </div>
+                <p>{s.voidReason}</p>
+                <small>
+                  {fmtTime(s.voidedAt)} · 承接单：
+                  {succ ? `${succ.sampleCode}（${STATUS_META[succ.status].label}）` : "—"}
+                </small>
+              </div>
+            );
+          })}
+      </div>
+    </section>
+  );
+}
+
+function eventLabel(type: string): string {
+  const map: Record<string, string> = {
+    SHEET_CREATED: "建单",
+    WEIGH_SIGNED: "称料签名",
+    REVIEW_PASSED: "复核通过",
+    REVIEW_REJECTED: "复核退回",
+    DELIVERY_ISSUED: "出送样单",
+    SHEET_VOIDED: "失效留档",
+  };
+  return map[type] ?? type;
 }
 
 export default App;
